@@ -40,6 +40,86 @@ uint8_t endpoint_address;
 pthread_t network_thread;
 void *network_thread_f(void *);
 
+void clear_screen() {
+    int row, col;
+    for (row = 0; row < 24; row++) {
+        for (col = 0; col < 64; col++) {
+            fbputchar(' ', row, col);
+        }
+    }
+}
+
+void draw_layout() {
+    int col;
+    for (col = 0; col < 64; col++) {
+        fbputchar('-', 21, col); // Draw horizontal line
+    }
+}
+
+
+/* Keycode to ASCII conversion table */
+
+static const char keycode_to_ascii[128] = {
+    0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b', '\t',
+    'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0,
+    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0, '\\', 'z',
+    'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' ', 0
+};
+
+void display_message(const char *msg) {
+    static int current_line = 0;
+    int col = 0;
+    
+    // Clear the current line before writing
+    memset(screen_buffer[current_line], ' ', MAX_COLS);
+    
+    while (*msg && col < MAX_COLS) {
+        screen_buffer[current_line][col] = *msg;
+        fbputchar(*msg, current_line, col);
+        msg++;
+        col++;
+    }
+
+    current_line = (current_line + 1) % 20; // Scroll messages
+}
+
+void display_input() {
+    int col;
+    // Clear input area
+    for (col = 0; col < 64; col++) {
+        fbputchar(' ', 22, col);
+    }
+
+    // Display user input
+    for (col = 0; col < cursor_pos; col++) {
+        fbputchar(input_buffer[col], 22, col);
+    }
+
+    // Display cursor
+    fbputchar('_', 22, cursor_pos);
+}
+
+void process_keypress(uint8_t keycode) {
+    if (keycode == 0x2A) {  // Backspace
+        if (cursor_pos > 0) {
+            cursor_pos--;
+            input_buffer[cursor_pos] = '\0';
+        }
+    } else if (keycode == 0x28) {  // Enter
+        input_buffer[cursor_pos] = '\0';
+        write(sockfd, input_buffer, strlen(input_buffer)); // Send message
+        display_message(input_buffer); // Display sent message
+        cursor_pos = 0; // Reset input
+        memset(input_buffer, 0, MAX_COLS);
+    } else if (cursor_pos < MAX_COLS - 1) {
+        char ascii = keycode_to_ascii[keycode];
+        if (ascii) {
+            input_buffer[cursor_pos++] = ascii;
+        }
+    }
+    display_input();
+}
+
 int main()
 {
   int err, col;
@@ -54,14 +134,10 @@ int main()
     fprintf(stderr, "Error: Could not open framebuffer: %d\n", err);
     exit(1);
   }
-
-  /* Draw rows of asterisks across the top and bottom of the screen */
-  for (col = 0 ; col < 64 ; col++) {
-    fbputchar('*', 0, col);
-    fbputchar('*', 23, col);
-  }
-
-  fbputs("Hello CSEE 4840 World!", 4, 10);
+  clear_screen();
+  draw_layout();
+	
+  fbputs("Chat Client - CSEE 4840", 1, 10);
 
   /* Open the keyboard */
   if ( (keyboard = openkeyboard(&endpoint_address)) == NULL ) {
