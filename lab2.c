@@ -2,7 +2,7 @@
  *
  * CSEE 4840 Lab 2 for 2019
  *
- * Name/UNI: Please Changeto Yourname (pcy2301)
+ * Name/UNI: ah4308 and hab2175
  */
 #include "fbputchar.h"
 #include <stdio.h>
@@ -40,6 +40,51 @@ uint8_t endpoint_address;
 pthread_t network_thread;
 void *network_thread_f(void *);
 
+#define MAX_LINES 20  // Number of lines for received messages
+#define MAX_COLS 64   // Number of columns per line
+
+char screen_buffer[MAX_LINES][MAX_COLS]; // Store displayed text
+int cursor_pos = 0; // Cursor position in input field
+char input_buffer[MAX_COLS]; // User input buffer
+
+char convert_keycode_to_ascii(uint8_t keycode, uint8_t modifiers) {
+    static const char keymap[] = {
+         0, 0, 0, 0, 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l',
+        'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '1', '2', '3', '4',
+        '5', '6', '7', '8', '9', '0', '\n', 0, 0, '\b', '\t', '-', '=', '[', ']', '\\', 'some', ':',
+        '\'', 'some3' , ',', '.', '/', 'some2', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+
+    static const char shifted_keymap[] = {
+         0, 0, 0, 0, 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L',
+        'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '!', '@', '#', '$',
+        '%', '^', '&', '*', '(', ')', '\n', 0, 0, '\b', '\t', '_', '+', '{', '}', '|', ':',
+        '"', '~', '<', '>', '?', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+    
+    if (keycode == 0x2C) {
+        return ' ';  // Explicitly return space
+    }
+
+
+    if (keycode >= sizeof(keymap)) {
+        return 0;  // Invalid keycode
+    }
+
+    //char ascii = keymap[keycode];
+
+    // Handle shift key (Left Shift: 0x02, Right Shift: 0x20)
+    if (modifiers & 0x22) {
+        return shifted_keymap[keycode];  // Return shifted character
+    } else {
+        return keymap[keycode];  // Return normal character
+    }
+}
+
 void clear_screen() {
     int row, col;
     for (row = 0; row < 24; row++) {
@@ -52,19 +97,9 @@ void clear_screen() {
 void draw_layout() {
     int col;
     for (col = 0; col < 64; col++) {
-        fbputchar('-', 21, col); // Draw horizontal line
+        fbputchar('-',12, col); // Draw horizontal line
     }
 }
-
-
-/* Keycode to ASCII conversion table */
-
-static const char keycode_to_ascii[128] = {
-    0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b', '\t',
-    'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0,
-    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0, '\\', 'z',
-    'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' ', 0
-};
 
 void display_message(const char *msg) {
     static int current_line = 0;
@@ -99,7 +134,7 @@ void display_input() {
     fbputchar('_', 22, cursor_pos);
 }
 
-void process_keypress(uint8_t keycode) {
+void process_keypress(uint8_t keycode, uint8_t modifiers) {
     if (keycode == 0x2A) {  // Backspace
         if (cursor_pos > 0) {
             cursor_pos--;
@@ -109,16 +144,17 @@ void process_keypress(uint8_t keycode) {
         input_buffer[cursor_pos] = '\0';
         write(sockfd, input_buffer, strlen(input_buffer)); // Send message
         display_message(input_buffer); // Display sent message
-        cursor_pos = 0; // Reset input
+        cursor_pos = 0;
         memset(input_buffer, 0, MAX_COLS);
     } else if (cursor_pos < MAX_COLS - 1) {
-        char ascii = keycode_to_ascii[keycode];
+        char ascii = convert_keycode_to_ascii(keycode, modifiers);
         if (ascii) {
             input_buffer[cursor_pos++] = ascii;
         }
     }
     display_input();
 }
+
 
 int main()
 {
@@ -134,10 +170,11 @@ int main()
     fprintf(stderr, "Error: Could not open framebuffer: %d\n", err);
     exit(1);
   }
+
   clear_screen();
   draw_layout();
-	
-  fbputs("Chat Client - CSEE 4840", 1, 10);
+
+  fbputs("Chat Client - CSEE 4840", 0, 10);
 
   /* Open the keyboard */
   if ( (keyboard = openkeyboard(&endpoint_address)) == NULL ) {
@@ -171,19 +208,18 @@ int main()
 
   /* Look for and handle keypresses */
   for (;;) {
-    libusb_interrupt_transfer(keyboard, endpoint_address,
-			      (unsigned char *) &packet, sizeof(packet),
-			      &transferred, 0);
-    if (transferred == sizeof(packet)) {
-      sprintf(keystate, "%02x %02x %02x", packet.modifiers, packet.keycode[0],
-	      packet.keycode[1]);
-      printf("%s\n", keystate);
-      fbputs(keystate, 6, 0);
-      if (packet.keycode[0] == 0x29) { /* ESC pressed? */
-	break;
-      }
+        libusb_interrupt_transfer(keyboard, endpoint_address,
+                                  (unsigned char *)&packet, sizeof(packet),
+                                  &transferred, 0);
+        if (transferred == sizeof(packet)) {
+            if (packet.keycode[0] != 0) {
+                  process_keypress(packet.keycode[0], packet.modifiers);
+                }
+            if (packet.keycode[0] == 0x29) {  // ESC pressed? Exit.
+                break;
+            }
+        }
     }
-  }
 
   /* Terminate the network thread */
   pthread_cancel(network_thread);
@@ -202,7 +238,7 @@ void *network_thread_f(void *ignored)
   while ( (n = read(sockfd, &recvBuf, BUFFER_SIZE - 1)) > 0 ) {
     recvBuf[n] = '\0';
     printf("%s", recvBuf);
-    fbputs(recvBuf, 8, 0);
+    fbputs(recvBuf, 2, 0);
   }
 
   return NULL;
